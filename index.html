@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Irrigação Inteligente — ESP32</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<section id="capa" class="page page--active">
+<div class="capa__field" aria-hidden="true"></div>
+<div class="capa__content">
+<p class="capa__kicker">Trabalho de Conclusão de Curso</p>
+<h1 class="capa__title">Sistema de Irrigação<br>Inteligente</h1>
+<p class="capa__subtitle">Controle e monitoramento da irrigação de uma estufa utilizando ESP32, sensor de umidade do solo e uma interface web responsiva.</p>
+<div class="capa__tags">
+<span class="tag">ESP32</span>
+<span class="tag">Wi-Fi</span>
+<span class="tag">Automação</span>
+<span class="tag">Tempo real</span>
+</div>
+<button class="btn btn--primary btn--lg" id="btn-acessar">Acessar sistema</button>
+<div class="capa__flow" aria-label="Fluxo do sistema">
+<span>Sensor</span><span class="capa__arrow">→</span>
+<span>ESP32</span><span class="capa__arrow">→</span>
+<span>Wi-Fi</span><span class="capa__arrow">→</span>
+<span>Interface</span><span class="capa__arrow">→</span>
+<span>Relé</span><span class="capa__arrow">→</span>
+<span>Bomba</span>
+</div>
+</div>
+</section>
+<div id="app" class="app">
+<header class="topbar">
+<button class="topbar__brand" data-nav="dashboard">
+<span class="topbar__leaf">🌱</span>
+<span>Irrigação Inteligente</span>
+</button>
+<nav class="topbar__nav" id="main-nav">
+<button class="navlink navlink--active" data-nav="dashboard">Painel</button>
+<button class="navlink" data-nav="historico">Histórico</button>
+<button class="navlink" data-nav="config">Configurações</button>
+<button class="navlink" data-nav="sobre">Sobre</button>
+</nav>
+<div class="topbar__status">
+<span class="pill" id="pill-esp32"><i class="dot"></i>ESP32</span>
+<span class="pill" id="pill-wifi"><i class="dot"></i>Wi-Fi</span>
+</div>
+<button class="topbar__burger" id="burger" aria-label="Abrir menu">☰</button>
+</header>
+<div class="toast-stack" id="toast-stack" aria-live="polite"></div>
+<main class="page page--active" id="dashboard" data-page="dashboard">
+<div class="banner" id="offline-banner" hidden>
+ESP32 desconectado — os comandos estão desativados até a reconexão.
+</div>
+<section class="grid-dash">
+<article class="card card--umidade">
+<div class="card__head">
+<h2>Umidade do solo</h2>
+<span class="sensor-flag" id="sensor-flag">normal</span>
+</div>
+<div class="umidade__value" id="umidade-valor">--%</div>
+<div class="umidade__bar">
+<div class="umidade__fill" id="umidade-fill" style="width:0%"></div>
+<div class="umidade__marker umidade__marker--min" id="marker-min" style="left:40%"></div>
+<div class="umidade__marker umidade__marker--max" id="marker-max" style="left:60%"></div>
+</div>
+<div class="umidade__legend">
+<span>Seco</span><span>Úmido</span>
+</div>
+<p class="controles__hint" id="adc-raw"></p>
+</article>
+<article class="card card--irrigacao" id="card-irrigacao">
+<h2>Irrigação</h2>
+<div class="irrigacao__state" id="irrigacao-estado">Desligada</div>
+<div class="irrigacao__modo">
+Modo <strong id="modo-label">Manual</strong>
+</div>
+</article>
+<article class="card card--controles">
+<h2>Controles</h2>
+<div class="controles__row">
+<button class="btn btn--liga" id="btn-ligar">Ligar irrigação</button>
+<button class="btn btn--desliga" id="btn-desligar">Desligar irrigação</button>
+</div>
+<button class="btn btn--modo" id="btn-modo">
+<span id="btn-modo-label">Ativar modo automático</span>
+</button>
+<p class="controles__hint" id="controles-hint">No modo manual, você controla a bomba diretamente pelos botões acima.</p>
+</article>
+<article class="card card--auto">
+<h2>Modo automático</h2>
+<label class="field">
+<span>Umidade mínima — liga a bomba abaixo deste valor</span>
+<div class="field__row">
+<input type="range" id="range-min" min="0" max="100" value="40">
+<output id="out-min">40%</output>
+</div>
+</label>
+<label class="field">
+<span>Umidade desejada — desliga a bomba ao atingir</span>
+<div class="field__row">
+<input type="range" id="range-max" min="0" max="100" value="60">
+<output id="out-max">60%</output>
+</div>
+</label>
+<button class="btn btn--ghost" id="btn-salvar-limites">Salvar limites</button>
+</article>
+<article class="card card--grafico">
+<div class="card__head">
+<h2>Umidade nas últimas horas</h2>
+</div>
+<canvas id="grafico-umidade" height="160"></canvas>
+</article>
+<article class="card card--rele2" id="card-revezamento">
+<div class="card__head">
+<h2>Revezamento dos relés</h2>
+<span class="sensor-flag" id="rev-flag">parado</span>
+</div>
+<p id="rev-desc">Com a irrigação ligada, os relés se revezam a cada intervalo.</p>
+<div class="rev__row">
+<div class="rev__rele" id="rev-1"><strong>Relé 1</strong><small>D2 · <span>aguardando</span></small></div>
+<div class="rev__rele" id="rev-2"><strong>Relé 2</strong><small>D3 · <span>aguardando</span></small></div>
+</div>
+<div class="rele2__timer" id="rev-timer">--:--</div>
+<label class="field">
+<span>Minutos de cada relé</span>
+<div class="field__row">
+<input type="range" id="range-rev-min" min="0" max="60" value="3">
+<output id="out-rev-min">3 min</output>
+</div>
+</label>
+<label class="field">
+<span>Segundos de cada relé</span>
+<div class="field__row">
+<input type="range" id="range-rev-seg" min="0" max="59" value="0">
+<output id="out-rev-seg">0 s</output>
+</div>
+</label>
+<button class="btn btn--ghost" id="btn-salvar-rev">Salvar tempo</button>
+<p class="controles__hint">O relé 1 liga primeiro; ao fim do intervalo ele desliga e o relé 2 assume. Os dois nunca ficam ligados ao mesmo tempo.</p>
+</article>
+<article class="card card--eventos">
+<h2>Últimos eventos</h2>
+<ul class="eventos-lista" id="eventos-lista">
+<li class="evento evento--vazio">Nenhum evento registrado ainda.</li>
+</ul>
+</article>
+</section>
+</main>
+<main class="page" id="historico" data-page="historico">
+<section class="page-inner">
+<h1>Histórico de irrigação</h1>
+<p class="page-lead">Registro de cada acionamento e desligamento da bomba, com horário, modo e umidade no momento.</p>
+<table class="tabela" id="tabela-historico">
+<thead>
+<tr><th>Horário</th><th>Ação</th><th>Modo</th><th>Umidade</th></tr>
+</thead>
+<tbody id="tabela-historico-body">
+<tr><td colspan="4" class="tabela__vazio">Sem registros por enquanto.</td></tr>
+</tbody>
+</table>
+</section>
+</main>
+<main class="page" id="config" data-page="config">
+<section class="page-inner page-inner--narrow">
+<h1>Configurações</h1>
+<p class="page-lead">Estes valores são enviados ao ESP32 e guardados na memória do dispositivo, permanecendo após reiniciar.</p>
+<div class="form-card">
+<label class="field">
+<span>Nome da estufa</span>
+<input type="text" id="cfg-nome" placeholder="Estufa 1">
+</label>
+<label class="field">
+<span>Umidade mínima (%)</span>
+<input type="number" id="cfg-min" min="0" max="100" value="40">
+</label>
+<label class="field">
+<span>Umidade desejada (%)</span>
+<input type="number" id="cfg-max" min="0" max="100" value="60">
+</label>
+<label class="field">
+<span>Intervalo de atualização (segundos)</span>
+<input type="number" id="cfg-intervalo" min="1" max="60" value="2">
+</label>
+<label class="field">
+<span>Modo padrão ao iniciar</span>
+<select id="cfg-modo-padrao">
+<option value="manual">Manual</option>
+<option value="automatico">Automático</option>
+</select>
+</label>
+<div class="form-card__actions">
+<button class="btn btn--primary" id="btn-salvar-config">Salvar configurações</button>
+</div>
+</div>
+<div class="form-card">
+<h2 class="form-card__title">Conexão com o ESP32</h2>
+<label class="field">
+<span>Endereço IP do ESP32</span>
+<input type="text" id="cfg-ip" placeholder="192.168.1.50">
+</label>
+<label class="field field--toggle">
+<span>Modo simulação (testar sem hardware)</span>
+<input type="checkbox" id="cfg-simulacao">
+</label>
+<div class="form-card__actions">
+<button class="btn btn--ghost" id="btn-salvar-ip">Salvar conexão</button>
+</div>
+</div>
+</section>
+</main>
+<main class="page" id="sobre" data-page="sobre">
+<section class="page-inner page-inner--narrow">
+<h1>Sobre o projeto</h1>
+<p class="page-lead">A irrigação manual em pequenas estufas costuma depender da disponibilidade e da memória de quem cuida das plantas — o que leva a solos encharcados, plantas ressecadas e desperdício de água.</p>
+<h2>A proposta</h2>
+<p>Este projeto automatiza a irrigação com um ESP32 que lê continuamente um sensor de umidade do solo e decide, dentro de limites configuráveis, quando ligar e desligar uma bomba d'água de 12 V através de um módulo relé.</p>
+<h2>Como funciona</h2>
+<p>O ESP32 conecta-se à rede Wi-Fi local e disponibiliza uma API HTTP própria. A interface web consulta essa API periodicamente e envia comandos de controle, sem depender de nenhum servidor externo.</p>
+<h2>Benefícios</h2>
+<ul class="lista-check">
+<li>Economia de água, evitando irrigação além do necessário</li>
+<li>Praticidade: liga e desliga a bomba automaticamente</li>
+<li>Monitoramento remoto pelo celular ou computador</li>
+<li>Histórico do que aconteceu enquanto ninguém estava por perto</li>
+</ul>
+</section>
+</main>
+<footer class="footer">
+<span>Sistema de Irrigação Inteligente — TCC · ESP32</span>
+</footer>
+</div>
+<script src="script.js"></script>
+</body>
+</html>
